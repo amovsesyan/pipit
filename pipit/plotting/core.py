@@ -391,9 +391,9 @@ def timeline(trace, show_depth=False, instant_events=False):
     select = figure(
         tools="",
         height=80,
-        title=(
-            "Drag the middle and edges of the selection box to change the range above",
-        ),
+        # title=(
+        #     "Drag the middle and edges of the selection box to change the range above",
+        # ),
         # title="Timeline",
         toolbar_location=None,
         y_axis_type=None,
