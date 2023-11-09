@@ -6,6 +6,25 @@
 
 A Python-based library for analyzing execution traces from parallel programs.
 
+# Getting Started
+To install pipit, first install the dependencies in [requirements.txt](./requirements.txt) with `pip install -r requirements.txt`. You'll also need to have jupyter installed if you want to use the vis. After all the dependencies are installed, you can install pipit with `pip install -e <pipit_root>` or `conda develop <pipit_root>`
+
+# Calculating Lateness
+[The Lateness Paper](https://www.cs.umd.edu/~bhatele/pubs/pdf/2016/tpds2016.pdf)
+## Before Starting with what the paper does
+- [ ] Finding and linking all MPI_Send and MPI_Recv calls
+## Mandatory Phase Partitioning
+- [ ] Make a new DataFrame with the following columns
+  - [ ] `process`, `receive_from`, `send_to`, `time`
+- [ ] Iterate through all the `MPI_Send` calls, and for each call do:
+  - [ ] add the send to the new dataframe
+  - [ ] add the corresponding receive to the new dataframe
+- [ ] Sort the DataFrame by `time`
+- [ ] From this DataFrame we can make a graph
+  - [ ] All processes will have a `start` root node
+  - [ ] Every other node will be corresponding to a row in the DataFrame
+
+**Now we'll be at the stage of Figure 2a**
 ### Contributing
 
 Pipit is an open source project. We welcome contributions via pull requests,
