@@ -46,13 +46,16 @@ def _get_event_graph(trace):
                     # Assumption - For a particular (process, thread) MPI Enter, Instant and Leave will be in that order and that order only
                     event = Event(event_row['Name'], event_row['Event Type'], index, event_row['Timestamp (ns)'], process, event_row['_matching_event'])
                     event.add_start_time(prev_event_row['Timestamp (ns)'])
+                else:
+                    print (f"Skipped event - {event_row['Name']}")
+                           
+                if event is not None:
+                    if prev_event is not None:
+                        event.add_prev_event(prev_event)
+                        prev_event.add_next_event(event)
 
-                if prev_event is not None:
-                    event.add_prev_event(prev_event)
-                    prev_event.add_next_event(event)
-
-                event_dict[index] = event
-                prev_event = event
+                    event_dict[index] = event
+                    prev_event = event
 
             elif event_row['Event Type'] == 'Enter':
                 pass
@@ -115,6 +118,7 @@ def get_partition_graph(trace):
 
             event = event.next_event
 
+    # TODO: Maybe, I need to return the event_list 
     return (start_partition_ids, partition_list)
 
 
