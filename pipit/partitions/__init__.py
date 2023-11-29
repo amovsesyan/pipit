@@ -3,4 +3,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-from .partitions import Event, Partition
+from .event import Event
+from .partition import Partition
+from .partitioning import get_partition_graph
