@@ -89,13 +89,13 @@ def get_partition_graph(trace):
     -------
     start_partition_ids : list
         List of start partition ids
-    partition_list : list
-        List of partitions
+    partition_dict : list
+        Dictionary of partition id -> Partition
     """
 
     start_event_ids, event_dict = _get_event_graph(trace)
 
-    partition_list = []
+    partition_dict = {} # partition_id -> Partition
     start_partition_ids = []
 
     event_to_partition = {} # event_id -> partition_id
@@ -106,11 +106,11 @@ def get_partition_graph(trace):
         while event is not None:
             if event.has_matching_event() and (event.matching_event_id in event_to_partition.keys()):
                 # If the matching event is already in a partition, add the current event to that partition
-                partition_list[event_to_partition[event.matching_event_id]].add_event(event) # Also sets the partition to the event
+                partition_dict[event_to_partition[event.matching_event_id]].add_event(event) # Also sets the partition to the event
                 event_to_partition[event.event_id] = event_to_partition[event.matching_event_id]
             else:
-                partition_id = len(partition_list)
-                partition_list.append(Partition(partition_id, [event]))
+                partition_id = len(partition_dict.keys())
+                partition_dict[partition_id] = Partition(partition_id, [event])
                 event_to_partition[event.event_id] = partition_id
 
             if event.event_name == "ProgramBegin":
@@ -119,6 +119,6 @@ def get_partition_graph(trace):
             event = event.next_event
 
     # TODO: Maybe, I need to return the event_list 
-    return (start_partition_ids, partition_list)
+    return (start_partition_ids, partition_dict)
 
 
