@@ -45,6 +45,82 @@ ___
 * In figure 4, are the stride boundaries leaps? Are we positioning based on leaps or partitions?
 * For each leap, are merging the partition's inside it together?
 * Why do we want to complete the leaps? Isn't having incomplete an indication of lateness?
+  
+### Sudo-code from paper to complete leaps through merging partitions
+```
+complete_leaps (partitions);
+  all leaps = compute_leaps (partitions);
+  k = 0;
+  while k < |all leaps| do
+    leap = all leaps[k];
+    changed = TRUE;
+    while changed and not complete (leap) do
+      changed = FALSE;
+      for p in partitions (leap) do
+        incoming = leap_distance (p, k-1);
+        outgoing = leap_distance (p, k+1);
+        if incoming << outgoing then
+          merge_into_previous_leap (p);
+          changed = TRUE;
+        else
+          for c in children(p) do
+            if will_expand (c, leap) then
+              absorb_partition (p, c);
+              changed = TRUE;
+            end
+          end
+        end
+      end
+    end
+    if not complete (leap) and force merge then
+      absorb_next_leap (leap);
+    else
+      k = k+1;
+    end
+  end
+```
+### Sudo-code for implementation
+* [ ] Calculate the graph distance for each partition
+  ```
+  def calc_distance(node) {
+    // calculate distance for node
+    if len(node.parents) == 0{
+      //root node
+      dist = 0
+    } else {
+      //find max of parent's distance
+      dist = 0
+      for parent in node.parents{
+        dist = max(dist, parent.distance)
+      }
+    }
+    node.distance = max(node.distance, dist)
+
+    //calculate the distance for the child nodes
+    for child_node in node.children {
+      calc_distance(child_node)
+    }
+    
+  }
+  ```
+* [ ] Create DataFrame for partitions, it will have the following columns:
+  * Partition
+  * Distance
+  * Processes Involved
+* [ ] Create Leaps
+  ```
+  def create_leaps(partitions_df) {
+    leaps = []
+    max_distance = max(partitions_df['Distance'])
+    for(int i = 0; i < max_distance; i++) {
+      leap = partitions_df[partitions_df['Distance'] == i]['Partition'].to_list()
+      leaps.append(leap)
+    }
+    return leaps
+  }
+  ```
+
+
 
 
 
