@@ -8,7 +8,7 @@ A Python-based library for analyzing execution traces from parallel programs.
 
 # Getting Started
 To install pipit, first install the dependencies in [requirements.txt](./requirements.txt) with `pip install -r requirements.txt`. You'll also need to have jupyter installed if you want to use the vis. After all the dependencies are installed, you can install pipit with `pip install -e <pipit_root>` or `conda develop <pipit_root>`
-
+___
 # Calculating Lateness
 [The Lateness Paper](https://www.cs.umd.edu/~bhatele/pubs/pdf/2016/tpds2016.pdf)
 ## Before Starting with what the paper does
@@ -25,6 +25,30 @@ To install pipit, first install the dependencies in [requirements.txt](./require
   - [ ] Every other node will be corresponding to a row in the DataFrame
 
 **Now we'll be at the stage of Figure 2a**
+
+## Leap Partitions
+## Definitions
+* **graph distance from source** defined recursively:
+  * *0* if root
+  * *max(parents.distance)* o.w.
+* **Leap**
+  * all partitions with the same graph distance from source
+* **Complete (Leap)**
+  * contains operations from all processes
+* **will_expand**
+  * if this expands the set of processes participating in the current leap
+* **incoming leap distance** 
+  * the minimum of the first operation entry time for each of its processes and the operation exit time of their previous operation in the partition’s previous-leap neighbors
+* **outgoing leap distance**
+  * the minimum of the last operation exit time for each of its processes and the operation entry time of the next operation in the partition’s next-leap neighbors
+### Questions
+* In figure 4, are the stride boundaries leaps? Are we positioning based on leaps or partitions?
+* For each leap, are merging the partition's inside it together?
+* Why do we want to complete the leaps? Isn't having incomplete an indication of lateness?
+
+
+
+___
 ### Contributing
 
 Pipit is an open source project. We welcome contributions via pull requests,
