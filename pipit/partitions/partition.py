@@ -9,6 +9,9 @@ class Partition:
         self.parents = []
         self.children = []
 
+        # variables for leap
+        self.distance = 0
+
         # Variables for Tarjan's algorithm
         self.visited = False
         self.index = -1
