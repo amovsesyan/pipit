@@ -10,10 +10,36 @@ class Leap:
 class Partition_DAG:
     # class to house Partition DAG
     # Not yet concrete, but need to start somewhere
-    def __init__(self, partition_ids: []) -> None:
-        self.roots: Set[Partition]
-        self.df = pd.DataFrame(columns=['Partition ID', 'Distance', 'Processes Involved'])
+    def __init__(self, root_partitions: [], partition_dict: []) -> None:
+        self.roots: Set[Partition] = set(root_partitions)
+        self.df = pd.DataFrame(columns=['Partition ID', 'Distance'])
         self.partition_map: Dict[int, Partition] = {}
+        for i in range(len(partition_dict)):
+            p = partition_dict[i]
+            if p is not None:
+                self.partition_map[i] = p
+    
+    def create_dag(self) -> None:
+        def create_dag_helper(node: Partition) -> None:
+            print('node', node.partition_id)
+            if node.partition_id not in self.df['Partition ID'].values.tolist():
+                # self.partition_map[node.partition_id] = node
+                # row = {'Partition ID': node.partition_id, 'Distance': 0}
+                # self.df = self.df.append(row, ignore_index=True)
+                self.df.loc[len(self.df.index)] = [node.partition_id, 0]
+                # print('added', node.partition_id)
+                for c in node.get_children():
+                    # print()
+                    p = self.partition_map[c]
+                    # print(self.partition_map)
+                    # print('child', p)
+                    create_dag_helper(p)
+        for p in self.roots:
+            # print(self.roots)
+            # print(p)
+            # print(p.partition_id)
+            create_dag_helper(p)
+
         
 
     def calculate_distance(self) -> None:
@@ -21,16 +47,23 @@ class Partition_DAG:
         def calc_distance_helper(node: Partition):
             # calculating distance for this node
             dist = 0
-            if len(node.parents) != 0:
-                for parent in node.parents:
+            parent_ids = node.get_parents()
+            if len(parent_ids) != 0:
+                for parent_id in parent_ids:
+                    parent = self.partition_map[parent_id]
                     dist = max(parent.distance, dist)
                 dist += 1
+                print(dist)
             dist = max(node.distance, dist)
             node.distance = dist
-            self.df[self.df['Partition ID'] == node.partition_id]['Distance'] = dist
+            # self.df.at[self.df['Partition ID'] == node.partition_id]['Distance'] = dist
+            index = self.df[self.df['Partition ID'] == node.partition_id].index[0]
+            self.df.at[index, 'Distance'] = dist
         
             # calculating distance for child nodes
-            for child_node in node.children:
+            for child_id in node.get_children():
+                child_node = self.partition_map[child_id]
+                # print('child node', child_node)
                 calc_distance_helper(child_node)
         
         for root in self.roots:
@@ -41,9 +74,9 @@ class Partition_DAG:
         # assumes that distance has been calculated
 
         self.leaps: List[Leap] = []
-        max_distance = self.df['Distance'].max()
+        max_distance = int(self.df['Distance'].max())
         for i in range(max_distance + 1):
-            partition_ids = self.df[self.df['Distance'] == i]['Partition'].values.tolist()
+            partition_ids = self.df[self.df['Distance'] == i]['Partition ID'].values.tolist()
             leap = Leap(partition_ids)
             self.leaps.append(leap)
 

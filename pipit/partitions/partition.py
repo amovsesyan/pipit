@@ -2,7 +2,7 @@ from .event import Event
 
 class Partition:
     def __init__(self, partition_id, event_list : list[Event]):
-        self.partition_id = partition_id
+        self.partition_id: int = partition_id
         self.event_list = event_list
         for event in self.event_list:
             event.add_partition(self)
@@ -16,6 +16,8 @@ class Partition:
         self.visited = False
         self.index = -1
         self.low_link = -1
+    def __hash__(self) -> int:
+        return self.partition_id
       
     def initialize_for_tarjan(self):
         self.visited = False
