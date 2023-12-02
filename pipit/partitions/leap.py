@@ -153,27 +153,27 @@ class Partition_DAG:
 
         
 
-    def complete_leaps(self, force_merge: bool):
+    def complete_leaps(self, force_merge: bool = True) -> None:
         # the algorithm from the paper to "Complete leaps through merging paritions"
         all_leaps = self.leaps
         k = 0
         while k < len(all_leaps):
             leap = all_leaps[k]
             changed = True
-            while changed and not leap.is_complete:
-                changed = False
-                for partition_id in leap.partitions_ids:
-                    p = self.partition_map[partition_id]
-                    incoming = self.leap_distance(p, k - 1)
-                    outgoing = self.leap_distance(p, k + 1)
-                    if self.much_smaller(incoming, outgoing):
-                        self.merge_partition_to_leap(p, k - 1, k)
-                        changed = True
-                    else:
-                        for c in p.children:
-                            if self.will_expand(c, leap):
-                                self.absorb_partition(p, c, k)
-                                changed = True
+            # while changed and not leap.is_complete:
+            #     changed = False
+            #     for partition_id in leap.partitions_ids:
+            #         p = self.partition_map[partition_id]
+            #         incoming = self.leap_distance(p, k - 1)
+            #         outgoing = self.leap_distance(p, k + 1)
+            #         if self.much_smaller(incoming, outgoing):
+            #             self.merge_partition_to_leap(p, k - 1, k)
+            #             changed = True
+            #         else:
+            #             for c in p.children:
+            #                 if self.will_expand(c, leap):
+            #                     self.absorb_partition(p, c, k)
+            #                     changed = True
             if not leap.is_complete and force_merge:
                 self.absorb_next_leap(k)
             else:
