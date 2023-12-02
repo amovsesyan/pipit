@@ -41,6 +41,49 @@ class Leap:
         self.processes = self.processes.union(leap.processes)
         self.calc_is_complete()
     
+        self.complete: bool = False
+      
+    def get_send_dag(self, partition_map):
+        # returns a dictionary of send events and their children
+    
+        # Get all events in the leap
+        event_dict = {}
+        for partition_id in self.partitions_ids:
+            partition = partition_map[partition_id]
+            event_dict.update(partition.get_events())
+        print(event_dict)
+    
+        # Create a DAG using only the MpiSend events
+        send_dag_nodes = []
+        send_dag_edges = pd.DataFrame(columns=['Node1', 'Node2'])
+    
+        for event_id, event in event_dict.items():
+            if event.event_name != "MpiRecv":
+                node1 = (event.get_partition().partition_id, event.event_id)
+                send_dag_nodes.append(node1)
+    
+                # Traverse the next event until you find a non-recv event
+                next_event = event.get_next_event()
+                while next_event is not None and next_event.event_id in event_dict.keys():
+                    if next_event.event_name != "MpiRecv":
+                        node2 = (next_event.get_partition().partition_id, next_event.event_id)
+                        send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
+                        break
+                    else:
+                        next_event = next_event.get_next_event()
+    
+                # Traverse the next starting from the matching event until you find a non-recv event
+                next_event = event.get_matching_event()
+                while next_event is not None and next_event.event_id in event_dict.keys():
+                    if next_event.event_name != "MpiRecv":
+                        node2 = (next_event.get_partition().partition_id, next_event.event_id)
+                        send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
+                        break
+                    else:
+                        next_event = next_event.get_next_event()
+        return send_dag_nodes, send_dag_edges
+
+
 
 class Partition_DAG:
     # class to house Partition DAG
@@ -110,7 +153,7 @@ class Partition_DAG:
         max_distance = int(self.df['Distance'].max())
         for i in range(max_distance + 1):
             partition_ids = self.df[self.df['Distance'] == i]['Partition ID'].values.tolist()
-            leap = Leap(partition_ids)
+            leap = Leap(self.partition_map, self.all_processes, partition_ids)
             self.leaps.append(leap)
 
     def leap_distance(self, partition: Partition, leap_id: int) -> float:
