@@ -10,6 +10,9 @@ class Leap:
         self.partition_map = partition_map
         self.is_complete: bool = False
         self.calc_processes()
+        self.min_event_start: float = float('inf')
+        self.max_event_end: float = 0
+        self.__calc_min_max_time()
 
     def calc_processes(self) -> None:
         self.processes.clear()
@@ -24,11 +27,14 @@ class Leap:
     def remove_partition(self, partition_id: int) -> None:
         self.partitions_ids.remove(partition_id)
         self.calc_processes()
+        self.__calc_min_max_time()
 
     def add_partition(self, partition_id: int) -> None:
         self.partitions_ids.add(partition_id)
         self.processes = self.processes.union(self.partition_map[partition_id].processes)
         self.calc_is_complete()
+        self.min_event_start = min(self.min_event_start, self.partition_map[partition_id].min_event_start)
+        self.max_event_end = max(self.max_event_end, self.partition_map[partition_id].max_event_end)
 
     def partition_will_expand(self, partition_id: int) -> bool:
         # returns true if partition encompass processes that aren't in the leap
@@ -40,6 +46,15 @@ class Leap:
         self.partitions_ids = self.partitions_ids.union(leap.partitions_ids)
         self.processes = self.processes.union(leap.processes)
         self.calc_is_complete()
+        self.min_event_start = min(self.min_event_start, leap.min_event_start)
+        self.max_event_end = max(self.max_event_end, leap.max_event_end)
+
+    def __calc_min_max_time(self) -> None:
+        if len(self.partitions_ids) > 0:
+            self.min_event_start = min([self.partition_map[p_id].min_event_start for p_id in self.partitions_ids])
+            self.max_event_end = max([self.partition_map[p_id].max_event_end for p_id in self.partitions_ids])
+
+    
     
 
 class Partition_DAG:
@@ -110,24 +125,33 @@ class Partition_DAG:
         max_distance = int(self.df['Distance'].max())
         for i in range(max_distance + 1):
             partition_ids = self.df[self.df['Distance'] == i]['Partition ID'].values.tolist()
-            leap = Leap(partition_ids)
+            leap = Leap(self.partition_map, self.all_processes, partition_ids)
             self.leaps.append(leap)
 
-    def leap_distance(self, partition: Partition, leap_id: int) -> float:
+    def leap_distance(self, partition: Partition, leap_id: int, incoming: bool) -> float:
         # calculates the incoming/outgoing leap distance
         # TODO: implement this
-        pass
+        if incoming:
+            if leap_id == 0:
+                return float('inf')
+            return partition.min_event_start - self.leaps[leap_id].max_event_end
+        else:
+            if leap_id == len(self.leaps) - 1:
+                return float('inf')
+            return self.leaps[leap_id].min_event_start - partition.max_event_end
 
     def much_smaller(self, incoming: int, outgoing: int) -> bool:
         # to calculate incoming << outgoing from the paper's psudo-code
         return incoming < (outgoing / 10)
     
-    def will_expand(self, partition: Partition, leap: Leap) -> bool:
+    def will_expand(self, partition_id: int, leap: Leap) -> bool:
         # returns true if partition encompass processes that aren't in the leap
-        return leap.partition_will_expand(partition.partition_id)
+        return leap.partition_will_expand(partition_id)
     
-    def absorb_partition(self, parent: Partition, child: Partition, parent_leap_id: int) -> None:
+    def absorb_partition(self, parent: Partition, child_id: int, parent_leap_id: int) -> None:
         # child partition is merged into parent partition
+        
+        child = self.partition_map[child_id]
         parent.parents = parent.parents.union(child.parents)
         parent.children = parent.children.union(child.children)
         parent.events = parent.event_list.union(child.events)
@@ -153,27 +177,28 @@ class Partition_DAG:
 
         
 
-    def complete_leaps(self, force_merge: bool = True) -> None:
+    def complete_leaps(self, force_merge: bool):
         # the algorithm from the paper to "Complete leaps through merging paritions"
         all_leaps = self.leaps
         k = 0
         while k < len(all_leaps):
             leap = all_leaps[k]
             changed = True
-            # while changed and not leap.is_complete:
-            #     changed = False
-            #     for partition_id in leap.partitions_ids:
-            #         p = self.partition_map[partition_id]
-            #         incoming = self.leap_distance(p, k - 1)
-            #         outgoing = self.leap_distance(p, k + 1)
-            #         if self.much_smaller(incoming, outgoing):
-            #             self.merge_partition_to_leap(p, k - 1, k)
-            #             changed = True
-            #         else:
-            #             for c in p.children:
-            #                 if self.will_expand(c, leap):
-            #                     self.absorb_partition(p, c, k)
-            #                     changed = True
+            while changed and not leap.is_complete:
+                changed = False
+                as_list = list(leap.partitions_ids)
+                for partition_id in as_list:
+                    p = self.partition_map[partition_id]
+                    incoming = self.leap_distance(p, k - 1, incoming = True)
+                    outgoing = self.leap_distance(p, k + 1, incoming = False)
+                    if self.much_smaller(incoming, outgoing):
+                        self.merge_partition_to_leap(p, k - 1, k)
+                        changed = True
+                    else:
+                        for c in p.children:
+                            if self.will_expand(c, leap):
+                                self.absorb_partition(p, c, k)
+                                changed = True
             if not leap.is_complete and force_merge:
                 self.absorb_next_leap(k)
             else:

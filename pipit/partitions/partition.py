@@ -13,13 +13,22 @@ class Partition:
 
         # variables for leap
         self.distance = 0
+        self.min_event_start: float = float('inf')
+        self.max_event_end: float = 0
+        self.__calc_min_max_time()
 
         # Variables for Tarjan's algorithm
         self.visited = False
         self.index = -1
         self.low_link = -1
+    
     def __hash__(self) -> int:
         return self.partition_id
+    
+    def __calc_min_max_time(self):
+        if len(self.event_list) > 0:    
+            self.min_event_start = min([event.start_time for event in self.event_list])
+            self.max_event_end = max([event.end_time for event in self.event_list])
       
     def initialize_for_tarjan(self):
         self.visited = False
@@ -44,6 +53,12 @@ class Partition:
         self.event_list.append(e)
         self.processes.add(e.process)
         e.add_partition(self)
+
+        if e.start_time < self.min_event_start:
+            self.min_event_start = e.start_time
+
+        if e.end_time > self.max_event_end:
+            self.max_event_end = e.end_time
     
     def get_parents(self):
         self.parents = set()
