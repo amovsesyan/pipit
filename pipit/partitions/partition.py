@@ -4,9 +4,13 @@ from typing import Set, List, Dict
 class Partition:
     def __init__(self, partition_id, event_list : list[Event]):
         self.partition_id: int = partition_id
-        self.event_list = event_list
-        for event in self.event_list:
+        #self.event_list = event_list
+        self.event_dict = {}
+        for event in event_list:
+            self.event_dict[event.event_id] = event
             event.add_partition(self)
+        #for event in self.event_list:
+        #    event.add_partition(self)
         self.parents = []
         self.children = []
         self.processes: Set[int] = set()
@@ -22,9 +26,6 @@ class Partition:
         self.index = -1
         self.low_link = -1
     
-    def __hash__(self) -> int:
-        return self.partition_id
-    
     def __calc_min_max_time(self):
         if len(self.event_list) > 0:    
             self.min_event_start = min([event.start_time for event in self.event_list])
@@ -35,6 +36,9 @@ class Partition:
         self.index = -1
         self.low_link = -1
 
+    def __hash__(self) -> int:
+        return self.partition_id
+      
     def __eq__(self, other):
         return self.partition_id == other.partition_id
 
@@ -42,16 +46,15 @@ class Partition:
         return self.partition_id != other.partition_id
     
     def merge_partition(self, other):
-        self.event_list.extend(other.event_list)
+        self.event_dict.update(other.event_dict)
         self.get_parents()
         self.get_children()
-        for event in self.event_list:
+        for event_id, event in self.event_dict.items():
             event.add_partition(self)
         return self
 
-    def add_event(self, e: Event):
-        self.event_list.append(e)
-        self.processes.add(e.process)
+    def add_event(self, e : Event):
+        self.event_dict[e.event_id] = e
         e.add_partition(self)
 
         if e.start_time < self.min_event_start:
@@ -62,7 +65,7 @@ class Partition:
     
     def get_parents(self):
         self.parents = set()
-        for event in self.event_list:
+        for event_id, event in self.event_dict.items():
             if event.prev_event != None and event.prev_event.partition != self:
                 self.parents.add(event.prev_event.partition.partition_id)
         
@@ -70,14 +73,14 @@ class Partition:
 
     def get_children(self): 
         self.children = set()
-        for event in self.event_list:
+        for event_id, event in self.event_dict.items():
             if event.next_event != None and event.next_event.partition != self:
                 self.children.add(event.next_event.partition.partition_id)
         return self.children
-      
-    def get_first_event(self):
-        return self.event_list[0]
 
+    def get_events(self):
+        return self.event_dict
+      
     @staticmethod
     def tarjan_strongly_connected(graph):
         """ Tarjan's Algorithm for finding strongly connected components
