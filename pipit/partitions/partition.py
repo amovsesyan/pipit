@@ -1,4 +1,5 @@
 from .event import Event
+from typing import Set, List, Dict
 
 class Partition:
     def __init__(self, partition_id, event_list : list[Event]):
@@ -8,6 +9,7 @@ class Partition:
             event.add_partition(self)
         self.parents = []
         self.children = []
+        self.processes: Set[int] = set()
 
         # variables for leap
         self.distance = 0
@@ -38,8 +40,9 @@ class Partition:
             event.add_partition(self)
         return self
 
-    def add_event(self, e):
+    def add_event(self, e: Event):
         self.event_list.append(e)
+        self.processes.add(e.process)
         e.add_partition(self)
     
     def get_parents(self):

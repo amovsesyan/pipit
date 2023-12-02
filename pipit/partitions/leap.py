@@ -3,21 +3,54 @@ import pandas as pd
 from typing import Set, List, Dict
 
 class Leap:
-    def __init__(self, partition_ids = []) -> None:
+    def __init__(self, partition_map: Dict[int, Partition], all_processes: Set[int], partition_ids = []) -> None:
         self.partitions_ids: Set[int] = set(partition_ids)
-        self.complete: bool = False
+        self.processes: Set[int] = set()
+        self.all_processes = all_processes
+        self.partition_map = partition_map
+        self.is_complete: bool = False
+        self.calc_processes()
+
+    def calc_processes(self) -> None:
+        self.processes.clear()
+        for p_id in self.partitions_ids:
+            p = self.partition_map[p_id]
+            self.processes = self.processes.union(p.processes)
+        self.calc_is_complete()
+    
+    def calc_is_complete(self) -> None:
+        self.is_complete = (self.processes == self.all_processes)
+    
+    def remove_partition(self, partition_id: int) -> None:
+        self.partitions_ids.remove(partition_id)
+        self.calc_processes()
+
+    def add_partition(self, partition_id: int) -> None:
+        self.partitions_ids.add(partition_id)
+        self.processes = self.processes.union(self.partition_map[partition_id].processes)
+        self.calc_is_complete()
+
+    def partition_will_expand(self, partition_id: int) -> bool:
+        # returns true if partition encompass processes that aren't in the leap
+        diff = self.partition_map[partition_id].processes.difference(self.processes)
+        return len(diff) > 0
+    
+    def absorb_leap(self, leap: 'Leap') -> None:
+        # merges leap into this leap
+        self.partitions_ids = self.partitions_ids.union(leap.partitions_ids)
+        self.processes = self.processes.union(leap.processes)
+        self.calc_is_complete()
+    
 
 class Partition_DAG:
     # class to house Partition DAG
     # Not yet concrete, but need to start somewhere
-    def __init__(self, root_partitions: [], partition_dict: []) -> None:
+    def __init__(self, root_partitions: [], partition_dict: Dict[int, Partition], all_processes: Set[int]) -> None:
         self.roots: Set[Partition] = set(root_partitions)
         self.df = pd.DataFrame(columns=['Partition ID', 'Distance'])
         self.partition_map: Dict[int, Partition] = {}
-        for i in range(len(partition_dict)):
-            p = partition_dict[i]
-            if p is not None:
-                self.partition_map[i] = p
+        self.all_processes = all_processes
+        self.partition_map = partition_dict
     
     def create_dag(self) -> None:
         def create_dag_helper(node: Partition) -> None:
@@ -87,25 +120,37 @@ class Partition_DAG:
 
     def much_smaller(self, incoming: int, outgoing: int) -> bool:
         # to calculate incoming << outgoing from the paper's psudo-code
-        return incoming < outgoing / 10
+        return incoming < (outgoing / 10)
     
     def will_expand(self, partition: Partition, leap: Leap) -> bool:
         # returns true if partition encompass processes that aren't in the leap
-        # TODO: implent this
-        pass
-
-    def absorb_partition(self, parent: Partition, child: Partition) -> None:
+        return leap.partition_will_expand(partition.partition_id)
+    
+    def absorb_partition(self, parent: Partition, child: Partition, parent_leap_id: int) -> None:
         # child partition is merged into parent partition
-        # parent.parents = parent.parents.union(child.parents)
-        # parent.children = parent.children.union(child.children)
-        # parent.events = parent.event_list.union(child.events)
-        # TODO: finish implementation
-        pass
+        parent.parents = parent.parents.union(child.parents)
+        parent.children = parent.children.union(child.children)
+        parent.events = parent.event_list.union(child.events)
+        for event in child.event_list:
+            event.partition = parent
+        
+        child_leap_id = child.distance
+        self.leaps[child_leap_id].remove_partition(child.partition_id)
+        self.leaps[parent_leap_id].calc_processes()
+        self.partition_map.pop(child.partition_id)
+        
 
     def absorb_next_leap(self, leap_id: int) -> None:
         # merges leap_id + 1 into leap_id
-        # TODO: implement
-        pass
+        self.leaps[leap_id].absorb_leap(self.leaps[leap_id + 1])
+        self.leaps.pop(leap_id + 1)
+
+    def merge_partition_to_leap(self, partition: Partition, leap_to_id: int, leap_from_id: int) -> None:
+        # merges partition into leap
+        self.leaps[leap_to_id].add_partition(partition.partition_id)
+        self.leaps[leap_from_id].remove_partition(partition.partition_id)
+
+
         
 
     def complete_leaps(self, force_merge: bool):
@@ -115,21 +160,21 @@ class Partition_DAG:
         while k < len(all_leaps):
             leap = all_leaps[k]
             changed = True
-            while changed and not leap.complete:
+            while changed and not leap.is_complete:
                 changed = False
                 for partition_id in leap.partitions_ids:
                     p = self.partition_map[partition_id]
                     incoming = self.leap_distance(p, k - 1)
                     outgoing = self.leap_distance(p, k + 1)
                     if self.much_smaller(incoming, outgoing):
-                        # TODO:  Merge partition into previous leap
+                        self.merge_partition_to_leap(p, k - 1, k)
                         changed = True
                     else:
                         for c in p.children:
                             if self.will_expand(c, leap):
-                                self.absorb_partition(p, c)
+                                self.absorb_partition(p, c, k)
                                 changed = True
-            if not leap.complete and force_merge:
+            if not leap.is_complete and force_merge:
                 self.absorb_next_leap(k)
             else:
                 k = k + 1
