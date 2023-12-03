@@ -11,9 +11,10 @@ class Partition:
             event.add_partition(self)
         #for event in self.event_list:
         #    event.add_partition(self)
-        self.parents = []
-        self.children = []
+        self.parents: Set[int] = set()
+        self.children: Set[int] = set()
         self.processes: Set[int] = set()
+        self.events_set: Set[Event] = set()
 
         # variables for leap
         self.distance = 0
@@ -27,9 +28,9 @@ class Partition:
         self.low_link = -1
     
     def __calc_min_max_time(self):
-        if len(self.event_list) > 0:    
-            self.min_event_start = min([event.start_time for event in self.event_list])
-            self.max_event_end = max([event.end_time for event in self.event_list])
+        if len(self.events_set) > 0:    
+            self.min_event_start = min([event.start_time for event in self.events_set])
+            self.max_event_end = max([event.end_time for event in self.events_set])
       
     def initialize_for_tarjan(self):
         self.visited = False
@@ -56,6 +57,8 @@ class Partition:
     def add_event(self, e : Event):
         self.event_dict[e.event_id] = e
         e.add_partition(self)
+        self.events_set.add(e)
+        self.processes.add(e.process)
 
         if e.start_time < self.min_event_start:
             self.min_event_start = e.start_time

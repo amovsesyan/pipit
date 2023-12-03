@@ -52,3 +52,6 @@ class Event:
     
     def get_partition(self):
         return self.partition
+    
+    def __hash__(self) -> int:
+        return self.event_id

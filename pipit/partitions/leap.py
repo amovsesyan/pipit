@@ -174,13 +174,12 @@ class Partition_DAG:
     def leap_distance(self, partition: Partition, leap_id: int, incoming: bool) -> float:
         # calculates the incoming/outgoing leap distance
         # TODO: implement this
+        print(leap_id, len(self.leaps))
+        if leap_id < 0 or leap_id >= len(self.leaps):
+            return float('inf')
         if incoming:
-            if leap_id == 0:
-                return float('inf')
             return partition.min_event_start - self.leaps[leap_id].max_event_end
         else:
-            if leap_id == len(self.leaps) - 1:
-                return float('inf')
             return self.leaps[leap_id].min_event_start - partition.max_event_end
 
     def much_smaller(self, incoming: int, outgoing: int) -> bool:
@@ -193,13 +192,22 @@ class Partition_DAG:
     
     def absorb_partition(self, parent: Partition, child_id: int, parent_leap_id: int) -> None:
         # child partition is merged into parent partition
-        
+        print('absorbing partition', child_id, 'into partition', parent.partition_id)
         child = self.partition_map[child_id]
         parent.parents = parent.parents.union(child.parents)
         parent.children = parent.children.union(child.children)
-        parent.events = parent.event_list.union(child.events)
-        for event in child.event_list:
+        parent.events_set = parent.events_set.union(child.events_set)
+        for event in child.events_set:
             event.partition = parent
+        
+        for p in child.parents:
+            p = self.partition_map[p]
+            p.children.remove(child.partition_id)
+            p.children.add(parent.partition_id)
+        for c in child.children:
+            c = self.partition_map[c]
+            c.parents.remove(child.partition_id)
+            c.parents.add(parent.partition_id)
         
         child_leap_id = child.distance
         self.leaps[child_leap_id].remove_partition(child.partition_id)
@@ -209,11 +217,13 @@ class Partition_DAG:
 
     def absorb_next_leap(self, leap_id: int) -> None:
         # merges leap_id + 1 into leap_id
+        print('absorbing next leap', leap_id, leap_id + 1, len(self.leaps))
         self.leaps[leap_id].absorb_leap(self.leaps[leap_id + 1])
         self.leaps.pop(leap_id + 1)
 
     def merge_partition_to_leap(self, partition: Partition, leap_to_id: int, leap_from_id: int) -> None:
         # merges partition into leap
+        print('merging partition', partition.partition_id, 'to leap', leap_to_id)
         self.leaps[leap_to_id].add_partition(partition.partition_id)
         self.leaps[leap_from_id].remove_partition(partition.partition_id)
 
