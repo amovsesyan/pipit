@@ -53,6 +53,8 @@ class Partition:
         for event_id, event in self.event_dict.items():
             event.add_partition(self)
         self.events_set.update(other.events_set)
+        self.get_children()
+        self.get_parents()
         return self
 
     def add_event(self, e : Event):

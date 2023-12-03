@@ -1,6 +1,9 @@
 from . import Partition, Event
 import pandas as pd
 from typing import Set, List, Dict
+import networkx as nx
+import pygraphviz as pgv
+from networkx.drawing.nx_agraph import graphviz_layout
 
 class Leap:
     def __init__(self, partition_map: Dict[int, Partition], all_processes: Set[int], partition_ids = []) -> None:
@@ -57,47 +60,183 @@ class Leap:
     
     
         self.complete: bool = False
-      
-    def get_send_dag(self, partition_map):
-        # returns a dictionary of send events and their children
+    
+    def get_event(self, partition_id: int, event_id: int) -> Event:
+        return self.partition_map[partition_id].event_dict[event_id]
+
+    def is_leap_empty(self) -> bool:
+        return len(self.partitions_ids) == 0
+
+    def __create_send_dag(self, verify = False):
+        def get_next_nonrecv_edge(next_event):
+            recv_chain = []
+            while next_event is not None and next_event.event_id in event_dict.keys():
+                node2 = (next_event.get_partition().partition_id, next_event.event_id)
+                if next_event.event_name != "MpiRecv":
+                    return node2, recv_chain
+                else:
+                    recv_chain.append(node2)
+                    next_event = next_event.get_next_event()
+            return None, recv_chain
     
         # Get all events in the leap
         event_dict = {}
         for partition_id in self.partitions_ids:
-            partition = partition_map[partition_id]
+            partition = self.partition_map[partition_id]
             event_dict.update(partition.get_events())
-        print(event_dict)
     
         # Create a DAG using only the MpiSend events
+        #recv_nodes = set()
+
+        full_dag_nodes = []
+        full_dag_edges = pd.DataFrame(columns=['Node1', 'Node2'])
+
         send_dag_nodes = []
         send_dag_edges = pd.DataFrame(columns=['Node1', 'Node2'])
+        recv_chains = {}
     
         for event_id, event in event_dict.items():
-            if event.event_name != "MpiRecv":
-                node1 = (event.get_partition().partition_id, event.event_id)
-                send_dag_nodes.append(node1)
-    
-                # Traverse the next event until you find a non-recv event
-                next_event = event.get_next_event()
-                while next_event is not None and next_event.event_id in event_dict.keys():
-                    if next_event.event_name != "MpiRecv":
-                        node2 = (next_event.get_partition().partition_id, next_event.event_id)
-                        send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
-                        break
-                    else:
-                        next_event = next_event.get_next_event()
-    
-                # Traverse the next starting from the matching event until you find a non-recv event
-                next_event = event.get_matching_event()
-                while next_event is not None and next_event.event_id in event_dict.keys():
-                    if next_event.event_name != "MpiRecv":
-                        node2 = (next_event.get_partition().partition_id, next_event.event_id)
-                        send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
-                        break
-                    else:
-                        next_event = next_event.get_next_event()
-        return send_dag_nodes, send_dag_edges
+            # Add the node and corresponding edges to the full dag
+            node1 = (event.get_partition().partition_id, event.event_id)
+            full_dag_nodes.append(node1)
+            next_event = event.get_next_event()
+            matching_event = event.get_matching_event()
+            if next_event is not None and next_event.event_id in event_dict.keys():
+                full_dag_edges.loc[len(full_dag_edges.index)] = [node1, (next_event.get_partition().partition_id, next_event.event_id)]
+            # Consider matching event for non-recv events only to create a DAG
+            if event.event_name != "MpiRecv" and matching_event is not None and matching_event.event_id in event_dict.keys():
+                full_dag_edges.loc[len(full_dag_edges.index)] = [node1, (matching_event.get_partition().partition_id, matching_event.event_id)]
 
+            # Now, we want to create a DAG using only the MpiSend events
+            if event.event_name == "MpiRecv":
+                # We just want to keep track of Recv Events
+                # recv_nodes.add(node1)
+                continue
+
+            # Non Recv Events
+            send_dag_nodes.append(node1)
+    
+            # Traverse the next event until you find a non-recv event
+            next_event = event.get_next_event()
+            node2, recv_chain = get_next_nonrecv_edge(next_event)
+            if node2 is not None:
+                send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
+                recv_chains[node2] = recv_chain
+    
+            # Traverse the next starting from the matching event until you find a non-recv event
+            next_event = event.get_matching_event()
+            node2, recv_chain = get_next_nonrecv_edge(next_event)
+            if node2 is not None:
+                send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
+                recv_chains[node2] = recv_chain
+
+        #recv_nodes_validation = set()
+        for node in full_dag_nodes:
+            if node not in recv_chains.keys():
+                recv_chains[node] = []
+        #    elif verify:
+        #        for recv_node in recv_chains[node]:
+        #            recv_nodes_validation.add(recv_node)
+        
+        #if verify:
+        #    assert(recv_nodes == recv_nodes_validation)
+        #    print (f"Recv Nodes Coverage Verified")
+    
+        return send_dag_nodes, send_dag_edges, recv_chains, full_dag_nodes, full_dag_edges
+
+    def stride(self, verify = False):
+        """ Computes the send dag and using network x assigns a stride to each node """
+        def longest_distance_from_source(graph):
+            # Perform topological sort
+            top_order = list(nx.topological_sort(graph))
+
+            # Initialize longest distances for each vertex
+            longest_distances = {node: float('-inf') for node in graph.nodes}
+
+            # The distance from a source to itself is 0
+            for source in graph.nodes:
+                longest_distances[source] = 0
+
+            # Update longest distances for each vertex
+            for node in top_order:
+                for neighbor in graph.neighbors(node):
+                    if longest_distances[node] + 1 > longest_distances[neighbor]:
+                        longest_distances[neighbor] = longest_distances[node] + 1
+
+            return longest_distances
+            
+        def longest_distance_from_source_full_dag(graph):
+            # Perform topological sort
+            top_order = list(nx.topological_sort(graph))
+
+            # Initialize longest distances for each vertex
+            longest_distances = {node: float('-inf') for node in graph.nodes}
+
+            # The distance from a source to itself is 0
+            for source in graph.nodes:
+                longest_distances[source] = 0
+
+            # Update longest distances for each vertex
+            for node in top_order:
+                parition_id, event_id = node
+                event = self.get_event(parition_id, event_id)
+                for neighbor in graph.neighbors(node):
+                    if event.event_name == "MpiRecv":
+                        if longest_distances[node] > longest_distances[neighbor]:
+                            longest_distances[neighbor] = longest_distances[node]
+                    else:
+                        if longest_distances[node] + 1 > longest_distances[neighbor]:
+                            longest_distances[neighbor] = longest_distances[node] + 1
+
+            return longest_distances
+
+        send_dag_nodes, send_dag_edges, recv_chains, full_dag_nodes, full_dag_edges = self.__create_send_dag(verify=verify)
+
+        send_dag = nx.DiGraph()
+        send_dag.add_nodes_from(send_dag_nodes)
+        send_dag.add_edges_from(send_dag_edges.to_records(index=False))
+
+        send_strides = longest_distance_from_source(send_dag)
+
+        full_dag = nx.DiGraph()
+        full_dag.add_nodes_from(full_dag_nodes)
+        full_dag.add_edges_from(full_dag_edges.to_records(index=False))
+
+        try:
+            cycle = nx.find_cycle(full_dag, orientation='original')
+        except nx.exception.NetworkXNoCycle:
+            print("No cycle found.")
+        else:
+            print("Cycle found:", cycle)
+
+        strides = longest_distance_from_source_full_dag(full_dag)
+
+        send_strides_df = pd.DataFrame([(k[0], k[1], self.get_event(k[0], k[1]).event_name, recv_chains[k], v) for k, v in send_strides.items()], 
+                               columns=['PartitionId', 'EventId', 'EventName', 'RecvChain', 'Stride'])
+
+        strides_df = pd.DataFrame([(k[0], k[1], self.get_event(k[0], k[1]).event_name, recv_chains[k], v) for k, v in strides.items()], 
+                               columns=['PartitionId', 'EventId', 'EventName', 'RecvChain', 'Stride'])
+        # Now, we need to add MPIRecv back and assign strides to them
+
+        #if verify:
+        #    # Verify next node relations in recv chain
+        #    for index, row in send_strides.iterrows():
+        #        chain_verification = True
+        #        next_node_id = row["EventId"]
+        #        for node in row["RecvChain"]:
+        #            current_node_event = leap.get_event(node[0], node[1])
+        #            node_next_event = current_node_event.get_next_event()
+
+        #            if (node_next_event.event_id != next_node_id):
+        #                chain_verification = False
+        #                print (f"Failed - {node} -> {next_node_id}")
+
+        #            next_node_id = node[1]
+
+        #    if chain_verification:
+        #      print (f"Recv Chains Verified for next node relations") 
+
+        return send_strides_df, strides_df
 
 
 class Partition_DAG:
@@ -194,22 +333,20 @@ class Partition_DAG:
         # child partition is merged into parent partition
         print('absorbing partition', child_id, 'into partition', parent.partition_id)
         child = self.partition_map[child_id]
-        parent.parents = parent.parents.union(child.parents)
-        parent.children = parent.children.union(child.children)
-        parent.events_set = parent.events_set.union(child.events_set)
-        for event in child.events_set:
-            event.partition = parent
-        
-        for p in child.parents:
-            p = self.partition_map[p]
-            p.children.remove(child.partition_id)
-            p.children.add(parent.partition_id)
-        for c in child.children:
-            c = self.partition_map[c]
-            c.parents.remove(child.partition_id)
-            c.parents.add(parent.partition_id)
-        
+
+        child_parents = child.get_parents()
+        child_children = child.get_children()
         child_leap_id = child.distance
+
+        parent.merge_partition(child)
+
+        for p in child_parents:
+            p = self.partition_map[p]
+            p.get_children()
+        for c in child_children: 
+            c = self.partition_map[c]
+            c.get_parents()
+        
         self.leaps[child_leap_id].remove_partition(child.partition_id)
         self.leaps[parent_leap_id].calc_processes()
         self.partition_map.pop(child.partition_id)
