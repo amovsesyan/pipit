@@ -138,12 +138,14 @@ class Leap:
 
         strides = calculate_strides(full_dag)
       
-        strides_df = pd.DataFrame(columns=['PartitionId', 'EventId', 'EventName', 'Stride', 'NextStride'])
+        strides_df = pd.DataFrame(columns=['PartitionId', 'EventId', 'EventName', 'Stride', 'NextStride', 'Process', 'Matching Event ID'])
 
         for node, stride in strides.items():
             event = self.get_event(node[0], node[1])
+            process = event.process
+            matching_event_id = event.matching_event_id
             event.stride = stride
-            strides_df.loc[len(strides_df.index)] = [node[0], node[1], event.event_name, stride, None]
+            strides_df.loc[len(strides_df.index)] = [node[0], node[1], event.event_name, stride, None, process, matching_event_id]
 
         return strides_df
 
@@ -373,7 +375,8 @@ class Partition_DAG:
     def global_step_assignment(self):
         # the algorithm from the paper to "Assign global steps to events"
         next_global_step = 0
-        global_step_df = pd.DataFrame(columns=['PartitionId', 'EventId', 'EventName', 'Stride', 'NextStride', 'Step'])
+        # global_step_df = pd.DataFrame(columns=['PartitionId', 'EventId', 'EventName', 'Stride', 'NextStride', 'Step'])
+        global_step_df = pd.DataFrame()
         for leap in self.leaps:
             if leap.is_leap_empty():
               continue
@@ -384,6 +387,23 @@ class Partition_DAG:
             global_step_df = pd.concat([global_step_df, step_df])
 
         self.global_step_df = global_step_df.sort_values(by=['Step']).reset_index(drop=True)
+
+        matching_step_col = []
+        matching_process_col = []
+        for index, row in self.global_step_df.iterrows():
+            matching_event_id = row['Matching Event ID']
+            matching_step = None
+            matching_process = None
+            if matching_event_id != None:
+                matching_row = self.global_step_df[self.global_step_df['EventId'] == matching_event_id]
+                if len(matching_row) > 0:
+                    matching_step = matching_row.iloc[0]['Step']
+                    matching_process = matching_row.iloc[0]['Process']
+            matching_step_col.append(matching_step)
+            matching_process_col.append(matching_process)
+        self.global_step_df['Matching Step'] = matching_step_col
+        self.global_step_df['Matching Process'] = matching_process_col
+
 
     def calculate_lateness(self):
         # calculates the lateness of each event
