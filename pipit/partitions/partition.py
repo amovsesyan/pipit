@@ -14,7 +14,7 @@ class Partition:
         self.parents: Set[int] = set()
         self.children: Set[int] = set()
         self.processes: Set[int] = set()
-        self.events_set: Set[Event] = set()
+        self.events_set: Set[Event] = set(event_list)
 
         # variables for leap
         self.distance = 0
@@ -52,6 +52,7 @@ class Partition:
         self.get_children()
         for event_id, event in self.event_dict.items():
             event.add_partition(self)
+        self.events_set.update(other.events_set)
         return self
 
     def add_event(self, e : Event):
