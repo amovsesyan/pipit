@@ -18,6 +18,14 @@ class Event:
         self.matching_event = None
 
         self.partition = None
+        
+        # TODO: We should add a leap id to each event
+
+        # Stride and Step Information
+        self.stride = None
+        self.step = None
+        self.lateness = 0
+        self.diff_latenss = 0
 
     def add_start_time(self, time):
         self.start_time = time

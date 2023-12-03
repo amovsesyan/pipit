@@ -2,8 +2,6 @@ from . import Partition, Event
 import pandas as pd
 from typing import Set, List, Dict
 import networkx as nx
-import pygraphviz as pgv
-from networkx.drawing.nx_agraph import graphviz_layout
 
 class Leap:
     def __init__(self, partition_map: Dict[int, Partition], all_processes: Set[int], partition_ids = []) -> None:
@@ -63,36 +61,23 @@ class Leap:
     
     def get_event(self, partition_id: int, event_id: int) -> Event:
         return self.partition_map[partition_id].event_dict[event_id]
+    
+    def is_event_in_leap(self, partition_id: int, event_id: int) -> bool:
+        return partition_id in self.partitions_ids and event_id in self.partition_map[partition_id].event_dict.keys()
 
     def is_leap_empty(self) -> bool:
         return len(self.partitions_ids) == 0
 
-    def __create_send_dag(self, verify = False):
-        def get_next_nonrecv_edge(next_event):
-            recv_chain = []
-            while next_event is not None and next_event.event_id in event_dict.keys():
-                node2 = (next_event.get_partition().partition_id, next_event.event_id)
-                if next_event.event_name != "MpiRecv":
-                    return node2, recv_chain
-                else:
-                    recv_chain.append(node2)
-                    next_event = next_event.get_next_event()
-            return None, recv_chain
-    
+    def __create_event_dag(self):
         # Get all events in the leap
         event_dict = {}
         for partition_id in self.partitions_ids:
             partition = self.partition_map[partition_id]
             event_dict.update(partition.get_events())
     
-        # Create a DAG using only the MpiSend events
-        #recv_nodes = set()
-
+        # Create a DAG using the events in the leap
         full_dag_nodes = []
         full_dag_edges = pd.DataFrame(columns=['Node1', 'Node2'])
-
-        send_dag_nodes = []
-        send_dag_edges = pd.DataFrame(columns=['Node1', 'Node2'])
         recv_chains = {}
     
         for event_id, event in event_dict.items():
@@ -101,80 +86,28 @@ class Leap:
             full_dag_nodes.append(node1)
             next_event = event.get_next_event()
             matching_event = event.get_matching_event()
+
             if next_event is not None and next_event.event_id in event_dict.keys():
                 full_dag_edges.loc[len(full_dag_edges.index)] = [node1, (next_event.get_partition().partition_id, next_event.event_id)]
+
             # Consider matching event for non-recv events only to create a DAG
             if event.event_name != "MpiRecv" and matching_event is not None and matching_event.event_id in event_dict.keys():
                 full_dag_edges.loc[len(full_dag_edges.index)] = [node1, (matching_event.get_partition().partition_id, matching_event.event_id)]
 
-            # Now, we want to create a DAG using only the MpiSend events
-            if event.event_name == "MpiRecv":
-                # We just want to keep track of Recv Events
-                # recv_nodes.add(node1)
-                continue
+        return full_dag_nodes, full_dag_edges
 
-            # Non Recv Events
-            send_dag_nodes.append(node1)
-    
-            # Traverse the next event until you find a non-recv event
-            next_event = event.get_next_event()
-            node2, recv_chain = get_next_nonrecv_edge(next_event)
-            if node2 is not None:
-                send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
-                recv_chains[node2] = recv_chain
-    
-            # Traverse the next starting from the matching event until you find a non-recv event
-            next_event = event.get_matching_event()
-            node2, recv_chain = get_next_nonrecv_edge(next_event)
-            if node2 is not None:
-                send_dag_edges.loc[len(send_dag_edges.index)] = [node1, node2]
-                recv_chains[node2] = recv_chain
-
-        #recv_nodes_validation = set()
-        for node in full_dag_nodes:
-            if node not in recv_chains.keys():
-                recv_chains[node] = []
-        #    elif verify:
-        #        for recv_node in recv_chains[node]:
-        #            recv_nodes_validation.add(recv_node)
-        
-        #if verify:
-        #    assert(recv_nodes == recv_nodes_validation)
-        #    print (f"Recv Nodes Coverage Verified")
-    
-        return send_dag_nodes, send_dag_edges, recv_chains, full_dag_nodes, full_dag_edges
-
-    def stride(self, verify = False):
+    def stride(self):
         """ Computes the send dag and using network x assigns a stride to each node """
-        def longest_distance_from_source(graph):
+        def calculate_strides(graph):
             # Perform topological sort
             top_order = list(nx.topological_sort(graph))
 
             # Initialize longest distances for each vertex
-            longest_distances = {node: float('-inf') for node in graph.nodes}
+            strides = {node: float('-inf') for node in graph.nodes}
 
             # The distance from a source to itself is 0
             for source in graph.nodes:
-                longest_distances[source] = 0
-
-            # Update longest distances for each vertex
-            for node in top_order:
-                for neighbor in graph.neighbors(node):
-                    if longest_distances[node] + 1 > longest_distances[neighbor]:
-                        longest_distances[neighbor] = longest_distances[node] + 1
-
-            return longest_distances
-            
-        def longest_distance_from_source_full_dag(graph):
-            # Perform topological sort
-            top_order = list(nx.topological_sort(graph))
-
-            # Initialize longest distances for each vertex
-            longest_distances = {node: float('-inf') for node in graph.nodes}
-
-            # The distance from a source to itself is 0
-            for source in graph.nodes:
-                longest_distances[source] = 0
+                strides[source] = 0
 
             # Update longest distances for each vertex
             for node in top_order:
@@ -182,21 +115,15 @@ class Leap:
                 event = self.get_event(parition_id, event_id)
                 for neighbor in graph.neighbors(node):
                     if event.event_name == "MpiRecv":
-                        if longest_distances[node] > longest_distances[neighbor]:
-                            longest_distances[neighbor] = longest_distances[node]
+                        if strides[node] > strides[neighbor]:
+                            strides[neighbor] = strides[node]
                     else:
-                        if longest_distances[node] + 1 > longest_distances[neighbor]:
-                            longest_distances[neighbor] = longest_distances[node] + 1
+                        if strides[node] + 1 > strides[neighbor]:
+                            strides[neighbor] = strides[node] + 1
 
-            return longest_distances
+            return strides
 
-        send_dag_nodes, send_dag_edges, recv_chains, full_dag_nodes, full_dag_edges = self.__create_send_dag(verify=verify)
-
-        send_dag = nx.DiGraph()
-        send_dag.add_nodes_from(send_dag_nodes)
-        send_dag.add_edges_from(send_dag_edges.to_records(index=False))
-
-        send_strides = longest_distance_from_source(send_dag)
+        full_dag_nodes, full_dag_edges = self.__create_event_dag()
 
         full_dag = nx.DiGraph()
         full_dag.add_nodes_from(full_dag_nodes)
@@ -207,37 +134,85 @@ class Leap:
         except nx.exception.NetworkXNoCycle:
             print("No cycle found.")
         else:
-            print("Cycle found:", cycle)
+            raise Exception("Cycle found:", cycle)
 
-        strides = longest_distance_from_source_full_dag(full_dag)
+        strides = calculate_strides(full_dag)
+      
+        strides_df = pd.DataFrame(columns=['PartitionId', 'EventId', 'EventName', 'Stride', 'NextStride'])
 
-        send_strides_df = pd.DataFrame([(k[0], k[1], self.get_event(k[0], k[1]).event_name, recv_chains[k], v) for k, v in send_strides.items()], 
-                               columns=['PartitionId', 'EventId', 'EventName', 'RecvChain', 'Stride'])
+        for node, stride in strides.items():
+            event = self.get_event(node[0], node[1])
+            event.stride = stride
+            strides_df.loc[len(strides_df.index)] = [node[0], node[1], event.event_name, stride, None]
 
-        strides_df = pd.DataFrame([(k[0], k[1], self.get_event(k[0], k[1]).event_name, recv_chains[k], v) for k, v in strides.items()], 
-                               columns=['PartitionId', 'EventId', 'EventName', 'RecvChain', 'Stride'])
-        # Now, we need to add MPIRecv back and assign strides to them
+        return strides_df
 
-        #if verify:
-        #    # Verify next node relations in recv chain
-        #    for index, row in send_strides.iterrows():
-        #        chain_verification = True
-        #        next_node_id = row["EventId"]
-        #        for node in row["RecvChain"]:
-        #            current_node_event = leap.get_event(node[0], node[1])
-        #            node_next_event = current_node_event.get_next_event()
+    def calculate_local_step(self):
+        def recursive_step_back(event, stride):
+            if event == None or (not self.is_event_in_leap(event.get_partition().partition_id, event.event_id)) or event.stride != stride:
+                return -1
+            else:
+                event.step = 1 + recursive_step_back(event.get_prev_event(), stride)
+                return event.step
 
-        #            if (node_next_event.event_id != next_node_id):
-        #                chain_verification = False
-        #                print (f"Failed - {node} -> {next_node_id}")
+        strides_df = self.stride()
 
-        #            next_node_id = node[1]
+        strides_df['Step'] = None
 
-        #    if chain_verification:
-        #      print (f"Recv Chains Verified for next node relations") 
+        unique_strides = strides_df['Stride'].unique().tolist()
+        unique_strides.sort()
+        curr_min_step = 0
+        for stride in unique_strides:
+            stride_df = strides_df[strides_df['Stride'] == stride]
 
-        return send_strides_df, strides_df
+            for index, row in stride_df.iterrows():
+                event = self.get_event(row['PartitionId'], row['EventId'])
 
+                if event.event_name != "MpiRecv":
+                    strides_df.at[index, 'NextStride'] = stride + 1
+                else:
+                    next_event = event.get_next_event()
+                    if next_event is not None and self.is_event_in_leap(next_event.get_partition().partition_id, next_event.event_id):
+                        strides_df.at[index, 'NextStride'] = next_event.stride
+                    else:
+                        strides_df.at[index, 'NextStride']  = stride + 1
+            
+            # Find the boundary steps in each stride
+            stride_df = strides_df[strides_df['Stride'] == stride] # Need to update the stride_df
+
+            stride_boundary_df = stride_df[stride_df['NextStride'] > stride]
+
+            max_step = 0
+            for index, row in stride_boundary_df.iterrows():
+                event = self.get_event(row['PartitionId'], row['EventId'])
+                recursive_step_back(event, stride)
+                if event.step > max_step:
+                    max_step = event.step
+            
+            # Now we need to push non-recv events to the last step of the stride
+            for index, row in stride_df.iterrows():
+                event = self.get_event(row['PartitionId'], row['EventId'])
+                if event.event_name != "MpiRecv":
+                    event.step = curr_min_step + max_step
+                else:
+                    event.step = curr_min_step + event.step 
+            
+            # Update the strides_df
+            for index, row in stride_df.iterrows():
+                event = self.get_event(row['PartitionId'], row['EventId'])
+                strides_df.at[index, 'Step'] = event.step
+              
+            curr_min_step = curr_min_step + (max_step + 1)
+
+        return strides_df
+  
+    def add_global_step(self, strides_df, curr_global_step : int):
+        for index, row in strides_df.iterrows():
+            event = self.get_event(row['PartitionId'], row['EventId'])
+            event.step = curr_global_step + event.step
+            strides_df.at[index, 'Step'] = event.step
+        max_step = strides_df['Step'].max()
+        return strides_df, max_step + 1
 
 class Partition_DAG:
     # class to house Partition DAG
@@ -248,6 +223,7 @@ class Partition_DAG:
         self.partition_map: Dict[int, Partition] = {}
         self.all_processes = all_processes
         self.partition_map = partition_dict
+        self.global_step_df = None
     
     def create_dag(self) -> None:
         def create_dag_helper(node: Partition) -> None:
@@ -393,6 +369,77 @@ class Partition_DAG:
                 self.absorb_next_leap(k)
             else:
                 k = k + 1
+    
+    def global_step_assignment(self):
+        # the algorithm from the paper to "Assign global steps to events"
+        next_global_step = 0
+        global_step_df = pd.DataFrame(columns=['PartitionId', 'EventId', 'EventName', 'Stride', 'NextStride', 'Step'])
+        for leap in self.leaps:
+            if leap.is_leap_empty():
+              continue
+    
+            step_df = leap.calculate_local_step()
+            step_df, next_global_step = leap.add_global_step(step_df, next_global_step)
+
+            global_step_df = pd.concat([global_step_df, step_df])
+
+        self.global_step_df = global_step_df.sort_values(by=['Step']).reset_index(drop=True)
+
+    def calculate_lateness(self):
+        # calculates the lateness of each event
+        # assumes that global steps have been assigned
+
+        self.global_step_df['Lateness'] = None
+
+        unique_steps = self.global_step_df['Step'].unique().tolist()
+        unique_steps.sort()
+
+        for step in unique_steps:
+            step_df = self.global_step_df[self.global_step_df['Step'] == step]
+
+            min_exit = float('inf')
+            for index, row in step_df.iterrows():
+                event = self.partition_map[row['PartitionId']].event_dict[row['EventId']]
+
+                if event.end_time < min_exit:
+                    min_exit = event.end_time
+            
+            for index, row in step_df.iterrows():
+                event = self.partition_map[row['PartitionId']].event_dict[row['EventId']]
+
+                event.lateness = event.end_time - min_exit
+                self.global_step_df.at[index, 'Lateness'] = event.lateness
+    
+    def calculate_differential_lateness(self):
+        # calculates the differential lateness of each event
+        # assumes that lateness has been calculated
+
+        self.global_step_df['DiffLateness'] = None
+
+        for index, row in self.global_step_df.iterrows():
+            event = self.partition_map[row['PartitionId']].event_dict[row['EventId']]
+
+            max_lateness = 0.0
+
+            prev_event = event.get_prev_event()
+            if prev_event is not None and prev_event.lateness > max_lateness:
+                max_lateness = prev_event.lateness
+                
+            if event.event_name == "MpiRecv":
+                prev_matching_event = event.get_matching_event()
+                if prev_matching_event is not None and prev_matching_event.lateness > max_lateness:
+                    max_lateness = prev_matching_event.lateness
+            
+            event.diff_latenss = max(event.lateness - max_lateness, 0.0)
+
+            self.global_step_df.at[index, 'DiffLateness'] = event.diff_latenss
+            
+
+
+    
+
+
+
 
 
 
