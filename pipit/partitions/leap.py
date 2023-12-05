@@ -229,7 +229,7 @@ class Partition_DAG:
     
     def create_dag(self) -> None:
         def create_dag_helper(node: Partition) -> None:
-            print('node', node.partition_id)
+            # print('node', node.partition_id)
             if node.partition_id not in self.df['Partition ID'].values.tolist():
                 # self.partition_map[node.partition_id] = node
                 # row = {'Partition ID': node.partition_id, 'Distance': 0}
@@ -261,7 +261,7 @@ class Partition_DAG:
                     parent = self.partition_map[parent_id]
                     dist = max(parent.distance, dist)
                 dist += 1
-                print(dist)
+                # print(dist)
             dist = max(node.distance, dist)
             node.distance = dist
             # self.df.at[self.df['Partition ID'] == node.partition_id]['Distance'] = dist
@@ -291,7 +291,7 @@ class Partition_DAG:
     def leap_distance(self, partition: Partition, leap_id: int, incoming: bool) -> float:
         # calculates the incoming/outgoing leap distance
         # TODO: implement this
-        print(leap_id, len(self.leaps))
+        # print(leap_id, len(self.leaps))
         if leap_id < 0 or leap_id >= len(self.leaps):
             return float('inf')
         if incoming:
@@ -309,7 +309,7 @@ class Partition_DAG:
     
     def absorb_partition(self, parent: Partition, child_id: int, parent_leap_id: int) -> None:
         # child partition is merged into parent partition
-        print('absorbing partition', child_id, 'into partition', parent.partition_id)
+        # print('absorbing partition', child_id, 'into partition', parent.partition_id)
         child = self.partition_map[child_id]
 
         child_parents = child.get_parents()
